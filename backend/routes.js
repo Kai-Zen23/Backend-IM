@@ -37,13 +37,40 @@ router.get('/entries', async (req, res) => {
 router.get('/seed', async (req, res) => {
     try {
         console.log('Seeding database via endpoint...');
-        // Clear data
-        await pool.query('TRUNCATE users, entries RESTART IDENTITY');
 
-        // Create Admin
+        // 1. DROP Tables to ensure clean slate (FORCE RESET)
+        await pool.query('DROP TABLE IF EXISTS entries');
+        await pool.query('DROP TABLE IF EXISTS users');
+
+        // 2. CREATE Tables with NEW Schema
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                email TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL
+            );
+        `);
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS entries (
+                id SERIAL PRIMARY KEY,
+                type TEXT NOT NULL,
+                name TEXT NOT NULL,
+                username TEXT,
+                password TEXT,
+                url TEXT,
+                notes TEXT,
+                folder_id TEXT,
+                favorite BOOLEAN DEFAULT FALSE,
+                totp_secret TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        // 3. Create Admin
         await pool.query('INSERT INTO users (email, password) VALUES ($1, $2)', ['admin@volt.vault', 'admin123']);
 
-        // Create Entries
+        // 4. Create Entries
         const entries = [
             { type: 'login', name: 'Google', username: 'james@gmail.com', password: 'password123', url: 'https://google.com', folder_id: 'Personal', favorite: true, totp_secret: 'JBSWY3DPEHPK3PXP' },
             { type: 'login', name: 'GitHub', username: 'dev-james', password: 'secure-password-456', url: 'https://github.com', folder_id: 'Work', favorite: true, notes: 'Main dev account.' },
@@ -57,7 +84,7 @@ router.get('/seed', async (req, res) => {
             );
         }
 
-        res.send('Database Seeded Successfully! <br> Login with: <b>admin@volt.vault</b> / <b>admin123</b>');
+        res.send('Database FORCE RESET & Seeded Successfully! <br> Login with: <b>admin@volt.vault</b> / <b>admin123</b>');
     } catch (err) {
         console.error(err);
         res.status(500).send('Seeding failed: ' + err.message);
