@@ -32,6 +32,38 @@ router.get('/entries', async (req, res) => {
     }
 });
 
+// TEMPORARY: Seed Database Route
+// Use this because we can't access the shell on Render Free Tier
+router.get('/seed', async (req, res) => {
+    try {
+        console.log('Seeding database via endpoint...');
+        // Clear data
+        await pool.query('TRUNCATE users, entries RESTART IDENTITY');
+
+        // Create Admin
+        await pool.query('INSERT INTO users (email, password) VALUES ($1, $2)', ['admin@volt.vault', 'admin123']);
+
+        // Create Entries
+        const entries = [
+            { type: 'login', name: 'Google', username: 'james@gmail.com', password: 'password123', url: 'https://google.com', folder_id: 'Personal', favorite: true, totp_secret: 'JBSWY3DPEHPK3PXP' },
+            { type: 'login', name: 'GitHub', username: 'dev-james', password: 'secure-password-456', url: 'https://github.com', folder_id: 'Work', favorite: true, notes: 'Main dev account.' },
+            { type: 'note', name: 'WiFi Password', notes: 'Home: SuperSecretWiFi', folder_id: 'Personal', favorite: false }
+        ];
+
+        for (const entry of entries) {
+            await pool.query(
+                'INSERT INTO entries (type, name, username, password, url, notes, folder_id, favorite, totp_secret) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+                [entry.type, entry.name, entry.username, entry.password, entry.url, entry.notes, entry.folder_id, entry.favorite, entry.totp_secret]
+            );
+        }
+
+        res.send('Database Seeded Successfully! <br> Login with: <b>admin@volt.vault</b> / <b>admin123</b>');
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Seeding failed: ' + err.message);
+    }
+});
+
 // POST new entry
 router.post('/entries', async (req, res) => {
     const { type, name, username, password, url, notes, folder_id, favorite, totp_secret } = req.body;
