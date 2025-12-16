@@ -2,6 +2,29 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('./database');
 
+// Helper to log activity
+const logActivity = async (action, details) => {
+    try {
+        await pool.query(
+            'INSERT INTO activity_logs (action, details) VALUES ($1, $2)',
+            [action, details]
+        );
+    } catch (err) {
+        console.error('Failed to log activity:', err);
+    }
+};
+
+// GET /logs
+router.get('/logs', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM activity_logs ORDER BY timestamp DESC LIMIT 50');
+        res.json(result.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 // POST /login
 router.post('/login', async (req, res) => {
     const { email, password } = req.body;
@@ -10,9 +33,10 @@ router.post('/login', async (req, res) => {
         const user = result.rows[0];
 
         if (user && user.password === password) {
-            // In a real app, generate a JWT token here
+            await logActivity('LOGIN', `User ${email} logged in`);
             res.json({ success: true, user: { id: user.id, email: user.email } });
         } else {
+            // await logActivity('LOGIN_FAILED', `Failed login attempt for ${email}`);
             res.status(401).json({ error: 'Invalid credentials' });
         }
     } catch (err) {
@@ -41,6 +65,7 @@ router.get('/seed', async (req, res) => {
         // 1. DROP Tables to ensure clean slate (FORCE RESET)
         await pool.query('DROP TABLE IF EXISTS entries');
         await pool.query('DROP TABLE IF EXISTS users');
+        await pool.query('DROP TABLE IF EXISTS activity_logs');
 
         // 2. CREATE Tables with NEW Schema
         await pool.query(`
@@ -67,6 +92,15 @@ router.get('/seed', async (req, res) => {
             );
         `);
 
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS activity_logs (
+                id SERIAL PRIMARY KEY,
+                action TEXT NOT NULL,
+                details TEXT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
         // 3. Create Admin
         await pool.query('INSERT INTO users (email, password) VALUES ($1, $2)', ['admin@volt.vault', 'admin123']);
 
@@ -83,6 +117,8 @@ router.get('/seed', async (req, res) => {
                 [entry.type, entry.name, entry.username, entry.password, entry.url, entry.notes, entry.folder_id, entry.favorite, entry.totp_secret]
             );
         }
+
+        await logActivity('SYSTEM', 'Database seeded successfully');
 
         res.send('Database FORCE RESET & Seeded Successfully! <br> Login with: <b>admin@volt.vault</b> / <b>admin123</b>');
     } catch (err) {
@@ -107,6 +143,7 @@ router.post('/entries', async (req, res) => {
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
             [type, name, username, password, url, notes, folder_id, favorite || false, totp_secret]
         );
+        await logActivity('CREATE', `Created new ${type} entry: ${name}`);
         res.status(201).json(result.rows[0]);
     } catch (err) {
         console.error(err);
@@ -119,6 +156,7 @@ router.delete('/entries/:id', async (req, res) => {
     const { id } = req.params;
     try {
         await pool.query('DELETE FROM entries WHERE id = $1', [id]);
+        await logActivity('DELETE', `Deleted entry ID: ${id}`);
         res.json({ message: 'Entry deleted' });
     } catch (err) {
         console.error(err);
